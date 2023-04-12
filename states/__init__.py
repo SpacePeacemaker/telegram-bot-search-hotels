@@ -1,1 +1,1 @@
-from . import contact_information
+from . import contact_information, search_hotels
