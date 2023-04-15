@@ -118,29 +118,32 @@ def get_high_exact_city(message: Message) -> None:
         data["city_id"] = user_id
 
     bot.set_state(message.from_user.id, HotelInfoState.hotels_number, message.chat.id)
-    # bot.send_message(message.from_user.id, data["city"], data["city_id"])
 
 
-@bot.message_handler(state=HotelInfoState.hotels_number)
-def get_high_hotels(message: Message) -> None:
-    if message.text.isdigit() and 0 < int(message.text) <= 10:
-        bot.send_message(message.from_user.id, "Отлично! Теперь выберите ДАТУ ЗАЕЗДА.")
-        bot.set_state(message.from_user.id, HotelInfoState.check_in_date, message.chat.id)
-
-        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-            data["hotels_number"] = int(message.text)
-
-        calendar_one, step_one = DetailedTelegramCalendar(calendar_id=1, locale="ru", min_date=date.today()).build()
-        bot.send_message(message.from_user.id, f"Выберите {LSTEP[step_one]}", reply_markup=calendar_one)
-
+@bot.callback_query_handler(func=lambda call: call.data, state=HotelInfoState.hotels_number)
+def get_number_hotels(call: CallbackQuery) -> None:
+    if call.message.text.isdigit() and 0 < int(call.message.text) <= 10:
+        bot.send_message(call.from_user.id, "Отлично! Теперь выберите ДАТУ ЗАЕЗДА.")
     else:
-        bot.send_message(message.from_user.id, "Что-то пошло не так. Либо вы ввели число не от 1 до 10, либо вы ввели "
+        bot.send_message(call.from_user.id, "Что-то пошло не так. Либо вы ввели число не от 1 до 10, либо вы ввели "
                                                "не число. Попробуйте снова: сколько нужно вывести отелей?")
+    bot.set_state(call.from_user.id, HotelInfoState.hotels_number, call.message.chat.id)
 
 
-@bot.message_handler(state=HotelInfoState.check_in_date)
-@bot.callback_query_handler(func=lambda call: call.data)
-def cal_in(call: CallbackQuery):
+@bot.callback_query_handler(func=lambda call: call.data, state=HotelInfoState.hotels_number)
+def get_check_in(call: CallbackQuery) -> None:
+    calendar_one, step_one = DetailedTelegramCalendar(calendar_id=1, locale="ru", min_date=date.today()).build()
+    bot.send_message(call.from_user.id,
+                     f"Выберите {LSTEP[step_one]}",
+                     reply_markup=calendar_one)
+    bot.set_state(call.from_user.id, HotelInfoState.check_in_date)
+
+    with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
+        data["hotels_number"] = call.data
+
+
+@bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=1), state=HotelInfoState.check_in_date)
+def cal_in(call: CallbackQuery) -> None:
     result_one, key_one, step_one = DetailedTelegramCalendar(calendar_id=1, locale="ru", min_date=date.today()).process(call.data)
     if not result_one and key_one:
         bot.edit_message_text(f"Выберите {LSTEP[step_one]}",
@@ -159,13 +162,12 @@ def cal_in(call: CallbackQuery):
         with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
             data["check_in_date"] = str(result_one)   # форма записи: yyyy-mm-dd
 
+        calendar_two, step_two = DetailedTelegramCalendar(calendar_id=2, locale="ru", min_date=check_in).build()
+        bot.send_message(call.from_user.id, f"Выберите {LSTEP[step_two]}", reply_markup=calendar_two)
 
-@bot.message_handler(state=HotelInfoState.check_out_date)
-@bot.callback_query_handler(func=lambda call: call.data)
-def cal_out(call: CallbackQuery):
-    calendar_two, step_two = DetailedTelegramCalendar(calendar_id=2, locale="ru", min_date=check_in).build()
-    bot.send_message(call.from_user.id, f"Выберите {LSTEP[step_two]}", reply_markup=calendar_two)
 
+@bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=2), state=HotelInfoState.check_out_date)
+def cal_out(call: CallbackQuery) -> None:
     result_two, key_two, step_two = DetailedTelegramCalendar(calendar_id=2, locale="ru").process(call.data)
     if not result_two and key_two:
         bot.edit_message_text(f"Выберите {LSTEP[step_two]}",
