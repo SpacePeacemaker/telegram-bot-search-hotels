@@ -129,34 +129,73 @@ def get_high_exact_city(message: Message) -> None:
 @bot.message_handler(state=HotelInfoState.adults)
 def get_adults(message: Message) -> None:
     if message.text.isdigit() and 0 < int(message.text) <= 5:
-        bot.send_message(message.from_user.id, "Отлично! Теперь введите КОЛИЧЕСТВО ОТЕЛЕЙ, которые вы хотите "
-                                                "посмотреть (не более 10-ти).")
+        bot.send_message(message.from_user.id, "Отлично! Теперь введите КОЛИЧЕСТВО ДЕТЕЙ, которые будут гостями "
+                                                "отеля (не более 5-ти).")
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            data["adults"] = int(message.text)
+        bot.set_state(message.from_user.id, HotelInfoState.children, message.chat.id)
     else:
         bot.send_message(message.from_user.id, "Что-то пошло не так. Либо вы ввели число не от 1 до 5, либо вы ввели "
                                                "не число. Попробуйте снова: сколько будет взрослых гостей?")
 
-    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-        data["adults"] = int(message.text)
 
-    bot.set_state(message.from_user.id, HotelInfoState.hotels_number, message.chat.id)
+@bot.message_handler(state=HotelInfoState.children)
+def get_children(message: Message) -> None:
+    if message.text.isdigit() and 0 <= int(message.text) <= 5:
+        if int(message.text) == 0:
+            bot.send_message(message.from_user.id, "Отлично! Теперь введите КОЛИЧЕСТВО ОТЕЛЕЙ, которые вы хотите "
+                                                   "посмотреть (не более 10-ти).")
+            bot.set_state(message.from_user.id, HotelInfoState.hotels_number, message.chat.id)
+        elif 1 <= int(message.text) <= 5:
+            bot.send_message(message.from_user.id, "Отлично! Теперь вам нужно уточнить ВОЗРАСТ детей.")
+            bot.send_message(message.from_user.id, "Введите возраст 1-го ребёнка:")
+            bot.set_state(message.from_user.id, HotelInfoState.exact_age_children, message.chat.id)
+
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            data["children"] = int(message.text)
+
+    else:
+        bot.send_message(message.from_user.id,
+                         "Что-то пошло не так. Либо вы ввели число не от 0 до 5, либо вы ввели "
+                         "не число. Попробуйте снова: сколько будет детей?")
+
+
+@bot.message_handler(state=HotelInfoState.exact_age_children)
+def get_age_children(message: Message) -> None:
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+        if "children_age" not in data.keys():
+            data["children_age"] = {}
+
+        if message.text.isdigit() and 0 < int(message.text) < 18:
+            data["children_age"][len(data["children_age"]) + 1] = int(message.text)
+        else:
+            bot.send_message(message.from_user.id,
+                             "Что-то пошло не так. Либо вы ввели число не от 1 до 17, либо вы ввели "
+                             "не число. Попробуйте снова.")
+
+        if data["children"] != len(data["children_age"]):
+            bot.send_message(message.from_user.id, f"Введите возраст {len(data['children_age']) + 1}-го ребёнка:")
+            bot.set_state(message.from_user.id, HotelInfoState.exact_age_children, message.chat.id)
+        else:
+            bot.send_message(message.from_user.id, "Отлично! Теперь введите КОЛИЧЕСТВО ОТЕЛЕЙ, которые вы хотите "
+                                                   "посмотреть (не более 10-ти).")
+            bot.set_state(message.from_user.id, HotelInfoState.hotels_number, message.chat.id)
 
 
 @bot.message_handler(state=HotelInfoState.hotels_number)
 def get_number_hotels(message: Message) -> None:
     if message.text.isdigit() and 0 < int(message.text) <= 10:
         bot.send_message(message.from_user.id, "Отлично! Теперь выберите ДАТУ ЗАЕЗДА.")
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            data["hotels_number"] = int(message.text)
+        calendar_one, step_one = DetailedTelegramCalendar(calendar_id=1, locale="ru", min_date=date.today()).build()
+        bot.send_message(message.chat.id,
+                         f"Выберите {LSTEP[step_one]}",
+                         reply_markup=calendar_one)
+        bot.set_state(message.from_user.id, HotelInfoState.check_in_date, message.chat.id)
     else:
         bot.send_message(message.from_user.id, "Что-то пошло не так. Либо вы ввели число не от 1 до 10, либо вы ввели "
                                                "не число. Попробуйте снова: сколько нужно вывести отелей?")
-
-    calendar_one, step_one = DetailedTelegramCalendar(calendar_id=1, locale="ru", min_date=date.today()).build()
-    bot.send_message(message.chat.id,
-                     f"Выберите {LSTEP[step_one]}",
-                     reply_markup=calendar_one)
-    bot.set_state(message.from_user.id, HotelInfoState.check_in_date, message.chat.id)
-
-    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-        data["hotels_number"] = int(message.text)
 
 
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=1), state=HotelInfoState.check_in_date)
@@ -174,7 +213,6 @@ def cal_in(call: CallbackQuery) -> None:
                               call.message.chat.id,
                               call.message.message_id)
 
-        check_in = result_one
         bot.send_message(call.message.chat.id, "Отлично! Теперь выберите ДАТУ ВЫЕЗДА.")
         bot.set_state(call.from_user.id, HotelInfoState.check_out_date, call.message.chat.id)
 
@@ -183,7 +221,7 @@ def cal_in(call: CallbackQuery) -> None:
 
         calendar_two, step_two = DetailedTelegramCalendar(calendar_id=2,
                                                           locale="ru",
-                                                          min_date=check_in).build()
+                                                          min_date=result_one).build()
         bot.send_message(call.message.chat.id, f"Выберите {LSTEP[step_two]}", reply_markup=calendar_two)
 
 
@@ -197,7 +235,6 @@ def cal_out(call: CallbackQuery) -> None:
                                                                   int(data["check_in_date"][5:7]),
                                                                   int(data["check_in_date"][8:]) + 1))\
                                                                  .process(call.data)
-
     if not result_two and key_two:
         bot.edit_message_text(f"Выберите {LSTEP[step_two]}",
                               call.message.chat.id,
@@ -221,74 +258,101 @@ def cal_out(call: CallbackQuery) -> None:
                          reply_markup=keyboard)
 
 
-@bot.message_handler(func=lambda call: True, state=HotelInfoState.hotel_photos)
+@bot.message_handler(state=HotelInfoState.hotel_photos)
 def get_photos(message: Message) -> None:
     if message.text == 'Да':
         bot.send_message(message.from_user.id, "Сколько фотографий вам нужно? (не больше 5-ти)")
-        if message.text.isdigit() and 0 < int(message.text) <= 5:
-            with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-                data["hotels_photos"] = int(message.text)
-        else:
-            bot.send_message(message.from_user.id,
-                             "Что-то пошло не так. Либо вы ввели число не от 1 до 5, либо вы ввели "
-                             "не число. Попробуйте снова: сколько вам нужно фотографий?")
+        bot.set_state(message.from_user.id, HotelInfoState.exact_photos, message.chat.id)
 
-    url_hotels = "properties/v2/list"
-    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-        payload = {
-            "currency": "USD",
-            "eapid": 1,
-            "locale": "ru_RU",
-            "siteId": 300000001,
-            "destination": { "regionId": str(data["city_id"]) },
-            "checkInDate": {
-                "day": int(data["check_in_date"][8:]),
-                "month": int(data["check_in_date"][5:7]),
-                "year": int(data["check_in_date"][:4])},
-            "checkOutDate": {
-                "day": int(data["check_out_date"][8:]),
-                "month": int(data["check_out_date"][5:7]),
-                "year": int(data["check_out_date"][:4])},
-            "rooms": [
-                {
-                    "adults": data["adults"],
-                    "children": []
+
+@bot.message_handler(state=HotelInfoState.exact_photos)
+def get_exact_photos(message: Message) -> None:
+    if message.text.isdigit() and 0 < int(message.text) <= 5:
+        url_hotels = "properties/v2/list"
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            data["hotels_photos"] = int(message.text)
+
+            date_check_in = date(int(data["check_in_date"][:4]),
+                                 int(data["check_in_date"][5:7]),
+                                 int(data["check_in_date"][8:]))
+            date_check_out = date(int(data["check_out_date"][:4]),
+                                  int(data["check_out_date"][5:7]),
+                                  int(data["check_out_date"][8:]))
+            nights = date_check_out - date_check_in
+            children = []
+            if "children_age" in data.keys():
+                for i in data["children_age"].keys():
+                    children.append({"age": data["children_age"][i]})
+
+            payload = {
+                "currency": "USD",
+                "eapid": 1,
+                "locale": "ru_RU",
+                "siteId": 300000001,
+                "destination": {"regionId": str(data["city_id"])},
+                "checkInDate": {
+                    "day": int(data["check_in_date"][8:]),
+                    "month": int(data["check_in_date"][5:7]),
+                    "year": int(data["check_in_date"][:4])},
+                "checkOutDate": {
+                    "day": int(data["check_out_date"][8:]),
+                    "month": int(data["check_out_date"][5:7]),
+                    "year": int(data["check_out_date"][:4])},
+                "rooms": [
+                    {
+                        "adults": data["adults"],
+                        "children": children
+                    }
+                ],
+                "resultsStartingIndex": 0,
+                "resultsSize": data["hotels_number"],
+                "sort": "PRICE_HIGH_TO_LOW",
+                "filters": {
+                    "availableFilter": "SHOW_AVAILABLE_ONLY"
                 }
-            ],
-            "resultsStartingIndex": 0,
-            "resultsSize": data["hotels_number"],
-            "sort": "PRICE_HIGH_TO_LOW",
-            "filters": {
-                "availableFilter": "SHOW_AVAILABLE_ONLY"
             }
-        }
 
-    response = api_request(url_hotels, payload, "POST")
-    dict_hotels = json.loads(response)
-    dict_hotels_answer = {}
-    id_answer = ""
-    name_answer = ""
+        response = api_request(url_hotels, payload, "POST")
+        dict_hotels = json.loads(response)
+        dict_hotels_answer = {}
+        id_answer = ""
+        name_answer = ""
+        price_answer = 0.0
 
-    for value in dict_hotels.values():
-        for i_value in value.values():
-            for j_key, j_value in i_value.items():
-                if j_key == 'properties':
-                    for k_dict in j_value:
-                        for l_key, l_value in k_dict.items():
-                            if l_key == 'id':
-                                id_answer = l_value
-                            elif l_key == 'name':
-                                name_answer = l_value
-                            if id_answer != "" and name_answer != "":
-                                break
-                        dict_hotels_answer[name_answer] = id_answer
-                        name_answer = ""
-                        id_answer = ""
-                if dict_hotels_answer != {}:
-                    break
+        for value in dict_hotels.values():
+            for i_value in value.values():
+                for j_key, j_value in i_value.items():
+                    if j_key == 'properties':
+                        for k_dict in j_value:
+                            for l_key, l_value in k_dict.items():
+                                if l_key == 'id':
+                                    id_answer = l_value
+                                elif l_key == 'name':
+                                    name_answer = l_value
+                                elif l_key == 'price':
+                                    for m_value in l_value.values():
+                                        if isinstance(m_value, dict):
+                                            for n_key, n_value in m_value.items():
+                                                if n_key == 'amount':
+                                                    price_answer = n_value * nights.days
+                                                    break
+                                            break
+                                if id_answer != "" and name_answer != "" and price_answer != 0.0:
+                                    break
+                            dict_hotels_answer[name_answer] = round(price_answer, 2)
+                            name_answer = ""
+                            id_answer = ""
+                            price_answer = 0.0
+                    if dict_hotels_answer != {}:
+                        break
 
-    keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=False, one_time_keyboard=True)
-    for i_key, i_value in dict_hotels_answer.items():
-        keyboard.add(types.KeyboardButton(text=i_key + ' ' + i_value))
-    bot.send_message(message.chat.id, 'Пожалуйста, уточните желаемый отель:', reply_markup=keyboard)
-    bot.set_state(message.from_user.id, HotelInfoState.exact_hotel, message.chat.id)
+        keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=False, one_time_keyboard=True)
+        for i_key, i_value in dict_hotels_answer.items():
+            keyboard.add(types.KeyboardButton(text=i_key + ' ' + str(i_value) + '$'))
+        bot.send_message(message.chat.id, 'Пожалуйста, уточните желаемый отель:', reply_markup=keyboard)
+        bot.set_state(message.from_user.id, HotelInfoState.exact_hotel, message.chat.id)
+
+    else:
+        bot.send_message(message.from_user.id,
+                         "Что-то пошло не так. Либо вы ввели число не от 1 до 5, либо вы ввели "
+                         "не число. Попробуйте снова: сколько вам нужно фотографий?")
