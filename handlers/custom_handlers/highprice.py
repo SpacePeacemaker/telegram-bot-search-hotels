@@ -21,6 +21,7 @@ headers = {
     "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
 }
 dict_answer = {}
+dict_hotels_answer = {}
 check_in = None
 
 
@@ -278,7 +279,7 @@ def get_exact_photos(message: Message) -> None:
             date_check_out = date(int(data["check_out_date"][:4]),
                                   int(data["check_out_date"][5:7]),
                                   int(data["check_out_date"][8:]))
-            nights = date_check_out - date_check_in
+            data["nights"] = date_check_out - date_check_in
             children = []
             if "children_age" in data.keys():
                 for i in data["children_age"].keys():
@@ -314,7 +315,6 @@ def get_exact_photos(message: Message) -> None:
 
         response = api_request(url_hotels, payload, "POST")
         dict_hotels = json.loads(response)
-        dict_hotels_answer = {}
         id_answer = ""
         name_answer = ""
         price_answer = 0.0
@@ -334,12 +334,12 @@ def get_exact_photos(message: Message) -> None:
                                         if isinstance(m_value, dict):
                                             for n_key, n_value in m_value.items():
                                                 if n_key == 'amount':
-                                                    price_answer = n_value * nights.days
+                                                    price_answer = n_value * data["nights"].days
                                                     break
                                             break
                                 if id_answer != "" and name_answer != "" and price_answer != 0.0:
                                     break
-                            dict_hotels_answer[name_answer] = round(price_answer, 2)
+                            dict_hotels_answer[name_answer] = [round(price_answer, 2), id_answer]
                             name_answer = ""
                             id_answer = ""
                             price_answer = 0.0
@@ -348,7 +348,7 @@ def get_exact_photos(message: Message) -> None:
 
         keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=False, one_time_keyboard=True)
         for i_key, i_value in dict_hotels_answer.items():
-            keyboard.add(types.KeyboardButton(text=i_key + ' ' + str(i_value) + '$'))
+            keyboard.add(types.KeyboardButton(text=i_key + ' ' + str(i_value[0]) + '$'))
         bot.send_message(message.chat.id, 'Пожалуйста, уточните желаемый отель:', reply_markup=keyboard)
         bot.set_state(message.from_user.id, HotelInfoState.exact_hotel, message.chat.id)
 
@@ -356,3 +356,46 @@ def get_exact_photos(message: Message) -> None:
         bot.send_message(message.from_user.id,
                          "Что-то пошло не так. Либо вы ввели число не от 1 до 5, либо вы ввели "
                          "не число. Попробуйте снова: сколько вам нужно фотографий?")
+
+
+@bot.message_handler(state=HotelInfoState.exact_hotel)
+def get_exact_hotel(message: Message) -> None:
+    url_photo = "properties/v2/detail"
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+        for i_key, i_value in dict_hotels_answer.items():
+            if message.text.startswith(i_key):
+                exact_hotel_id = i_value[1]
+                bot.send_message(message.from_user.id, "Вы выбрали следующий отель: " + i_key)
+                bot.send_message(message.from_user.id,
+                                 f"Его стоимость за {data['nights'].days} дней: " + str(i_value[0]))
+                break
+        payload = {
+            "currency": "USD",
+            "eapid": 1,
+            "locale": "ru_RU",
+            "siteId": 300000001,
+            "propertyId": str(exact_hotel_id)
+        }
+        response = api_request(url_photo, payload, "POST")
+        dict_photos = json.loads(response)
+        count = 0
+
+        for value in dict_photos.values():
+            for i_value in value.values():
+                for j_key, j_value in i_value.items():
+                    if j_key == 'propertyGallery':
+                        for k_key, k_value in j_value.items():
+                            if k_key == "images":
+                                for l_value in k_value:
+                                    if count != data["hotels_photos"]:
+                                        for m_key, m_value in l_value.items():
+                                            if m_key == "image":
+                                                for n_key, n_value in m_value.items():
+                                                    if n_key == "url":
+                                                        count += 1
+                                                        bot.send_message(message.chat.id,
+                                                                         f"Отправляю {count}-ю фотографию:")
+                                                        bot.send_message(message.chat.id, n_value)
+                                                        break
+                                    else:
+                                        break
