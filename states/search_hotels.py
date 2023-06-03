@@ -2,6 +2,7 @@ from telebot.handler_backends import State, StatesGroup
 
 
 class HotelInfoState(StatesGroup):
+    command = State()
     city = State()
     exact_city = State()
     hotels_number = State()

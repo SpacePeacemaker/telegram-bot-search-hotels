@@ -1,5 +1,6 @@
 import requests
 import json
+from peewee import SqliteDatabase, Model, CharField, IntegerField
 
 
 def get_key(d, user_value):
@@ -123,3 +124,24 @@ for value in dict_hotels.values():
 
 for i_key, i_value in dict_hotels_answer.items():
 	print(i_key, '-', i_value)
+
+
+
+
+
+db = SqliteDatabase("history.db")
+
+class BaseModel(Model):
+    class Meta:
+        database = db
+
+
+class User(BaseModel):
+    name = CharField()
+    telegram_id = IntegerField()
+
+
+User.create(name=message.from_user.username, telegram_id=message.from_user.id)
+User.select().where(User.telegram_id == message.from_user.id and User.name == message.from_user.username)
+
+
