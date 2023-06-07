@@ -129,19 +129,21 @@ for i_key, i_value in dict_hotels_answer.items():
 
 
 
-db = SqliteDatabase("history.db")
-
-class BaseModel(Model):
-    class Meta:
-        database = db
 
 
-class User(BaseModel):
-    name = CharField()
-    telegram_id = IntegerField()
-
-
-User.create(name=message.from_user.username, telegram_id=message.from_user.id)
-User.select().where(User.telegram_id == message.from_user.id and User.name == message.from_user.username)
+# db = SqliteDatabase("history.db")
+#
+# class BaseModel(Model):
+#     class Meta:
+#         database = db
+#
+#
+# class User(BaseModel):
+#     name = CharField()
+#     telegram_id = IntegerField()
+#
+#
+# User.create(name=message.from_user.username, telegram_id=message.from_user.id)
+# User.select().where(User.telegram_id == message.from_user.id and User.name == message.from_user.username)
 
 
