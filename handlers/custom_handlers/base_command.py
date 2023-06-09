@@ -192,6 +192,7 @@ def get_children(message: Message) -> None:
                 bot.send_message(message.from_user.id, "Отлично! Теперь вам нужно уточнить ВОЗРАСТ детей.")
                 bot.send_message(message.from_user.id, "Введите возраст 1-го ребёнка:")
                 bot.set_state(message.from_user.id, HotelInfoState.exact_age_children, message.chat.id)
+                logger.info("Пользователь " + message.from_user.username + " начинает вводить возраст детей.")
 
             data_info["children"] = int(message.text)
 
@@ -206,7 +207,6 @@ def get_children(message: Message) -> None:
 @logger.catch()
 @bot.message_handler(state=HotelInfoState.exact_age_children)
 def get_age_children(message: Message) -> None:
-    logger.info("Пользователь " + message.from_user.username + " начинает вводить возраст детей.")
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
         if "children_age" not in data_info.keys():
             data_info["children_age"] = {}
@@ -225,14 +225,17 @@ def get_age_children(message: Message) -> None:
             bot.send_message(message.from_user.id, f"Напишите возраст {len(data_info['children_age']) + 1}-го ребёнка:")
             bot.set_state(message.from_user.id, HotelInfoState.exact_age_children, message.chat.id)
         elif data_info["command"] == '/bestdeal':
+            data_info["price"] = []
+            data_info["dest"] = []
             bot.set_state(message.from_user.id, HotelInfoState.price_min, message.chat.id)
+            logger.info("Пользователь " + message.from_user.username + " закончил вводить возраст детей.")
             bot.send_message(message.from_user.id, "Отлично! Теперь введите МИНИМАЛЬНУЮ СТОИМОСТЬ (в долларах) "
                                                    "за всю поездку, которую вы готовы потратить на отель.")
         else:
             bot.set_state(message.from_user.id, HotelInfoState.hotels_number, message.chat.id)
+            logger.info("Пользователь " + message.from_user.username + " закончил вводить возраст детей.")
             bot.send_message(message.from_user.id, "Отлично! Теперь напишите КОЛИЧЕСТВО ОТЕЛЕЙ, которые вы хотите "
                                                    "посмотреть (не более 10-ти).")
-        logger.info("Пользователь " + message.from_user.username + " закончил вводить возраст детей.")
 
 
 @logger.catch()
@@ -429,6 +432,8 @@ def get_photos(call: CallbackQuery) -> None:
         bot.send_message(call.message.chat.id, "Сколько фотографий вам нужно? (не больше 5-ти)")
     elif call.data == 'no':
         logger.info("Пользователь " + call.message.chat.username + " выбрал, что ему не нужны фотографии.")
+        bot.set_state(call.from_user.id, HotelInfoState.hotels_list, call.message.chat.id)
+        bot.send_message(call.message.chat.id, "Ищу отели...")
 
 
 @logger.catch()
@@ -436,189 +441,140 @@ def get_photos(call: CallbackQuery) -> None:
 def get_exact_photos(message: Message) -> None:
     if message.text.isdigit() and 0 < int(message.text) <= 5:
         logger.info("Пользователь " + message.from_user.username + " выбрал количество фотографий: " + message.text)
-        bot.send_message(message.chat.id, "Отлично! Начинаю искать...")
-        url_hotels = "properties/v2/list"
         with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
-            logger.info("Бот начал поиск подходящих отелей.")
             data_info["hotels_photos"] = int(message.text)
-            date_check_in = date(int(data_info["check_in_date"][:4]),
-                                 int(data_info["check_in_date"][5:7]),
-                                 int(data_info["check_in_date"][8:]))
-            date_check_out = date(int(data_info["check_out_date"][:4]),
-                                  int(data_info["check_out_date"][5:7]),
-                                  int(data_info["check_out_date"][8:]))
-            data_info["nights"] = date_check_out - date_check_in
-            children = []
-            price_filter = {}
-
-            if "children_age" in data_info.keys():
-                for i in data_info["children_age"].keys():
-                    children.append({"age": data_info["children_age"][i]})
-            if "price" in data_info.keys() and isinstance(data_info["price"], list):
-                price_filter = {
-                    "max": data_info["price"][1],
-                    "min": data_info["price"][0]
-                }
-
-            if data_info['command'] == '/lowprice':
-                sort = "PRICE_LOW_TO_HIGH"
-            elif data_info['command'] == '/highprice':
-                sort = "PRICE_HIGH_TO_LOW"
-            elif data_info['command'] == '/bestdeal':
-                sort = "DISTANCE"
-
-            payload = {
-                "currency": "USD",
-                "eapid": 1,
-                "locale": "ru_RU",
-                "siteId": 300000001,
-                "destination": {"regionId": str(data_info["city_id"])},
-                "checkInDate": {
-                    "day": int(data_info["check_in_date"][8:]),
-                    "month": int(data_info["check_in_date"][5:7]),
-                    "year": int(data_info["check_in_date"][:4])},
-                "checkOutDate": {
-                    "day": int(data_info["check_out_date"][8:]),
-                    "month": int(data_info["check_out_date"][5:7]),
-                    "year": int(data_info["check_out_date"][:4])},
-                "rooms": [
-                    {
-                        "adults": data_info["adults"],
-                        "children": children
-                    }
-                ],
-                "resultsStartingIndex": 0,
-                "resultsSize": 200,
-                "sort": sort,
-                "filters": {
-                    "availableFilter": "SHOW_AVAILABLE_ONLY",
-                    "price": price_filter
-                }
-            }
-
-            response = api_request(url_hotels, payload, "POST")
-            dict_hotels = json.loads(response)
-
-            id_answer = ""
-            name_answer = ""
-            night_price_answer = 0.0
-            price_answer = 0.0
-            distance_answer = 0.0
-            data_info["dict_hotels_answer"] = {}
-            counter = data_info["hotels_number"]
-
-            for value in dict_hotels.values():
-                for i_value in value.values():
-                    for j_key, j_value in i_value.items():
-                        if j_key == 'properties':
-                            for k_dict in j_value:
-                                for l_key, l_value in k_dict.items():
-                                    if l_key == 'id':
-                                        id_answer = l_value
-                                    elif l_key == 'name':
-                                        name_answer = l_value
-                                    elif l_key == 'destinationInfo':
-                                        for m1_key, m1_value in l_value.items():
-                                            if m1_key == "distanceFromDestination":
-                                                for n1_key, n1_value in m1_value.items():
-                                                    if n1_key == 'unit':
-                                                        ratio = 1
-                                                        if n1_value == 'MILE':
-                                                            ratio = 1.609
-                                                    elif n1_key == "value":
-                                                        if "dest" not in data_info.keys() or (data_info["dest"][0] <=
-                                                                                              round(n1_value * ratio, 2)
-                                                                                              <= data_info["dest"][1]):
-                                                            distance_answer = round(n1_value * ratio, 2)
-                                                        else:
-                                                            name_answer = ""
-                                                            id_answer = ""
-                                                            price_answer = 0.0
-                                                            distance_answer = 0.0
-                                                        break
-                                                break
-                                    elif l_key == 'price':
-                                        for m1_value in l_value.values():
-                                            if isinstance(m1_value, dict):
-                                                for n1_key, n1_value in m1_value.items():
-                                                    if n1_key == 'amount':
-                                                        if "price" not in data_info.keys() or (data_info["price"][0] <=
-                                                                                               round(n1_value *
-                                                                                                     data_info["nights"]
-                                                                                                     .days, 2)
-                                                                                               <= data_info["price"]
-                                                                                               [1]):
-                                                            night_price_answer = round(n1_value, 2)
-                                                            price_answer = round(n1_value * data_info["nights"].days, 2)
-                                                        else:
-                                                            name_answer = ""
-                                                            id_answer = ""
-                                                            price_answer = 0.0
-                                                            distance_answer = 0.0
-                                                        break
-                                                break
-                                        break
-                                    if id_answer != "" and name_answer != "" and price_answer != 0.0 and \
-                                            distance_answer != 0.0:
-                                        data_info["dict_hotels_answer"][name_answer] = [night_price_answer,
-                                                                                        price_answer,
-                                                                                        distance_answer,
-                                                                                        id_answer]
-                                        name_answer = ""
-                                        id_answer = ""
-                                        price_answer = 0.0
-                                        distance_answer = 0.0
-                                        counter -= 1
-                                        break
-                                if counter == 0:
-                                    logger.info("Бот завершил поиск подходящих отелей.")
-                                    break
-
-            if sort == "PRICE_HIGH_TO_LOW":
-                data_info["dict_hotels_answer"] = dict(reversed(sorted(data_info["dict_hotels_answer"].items(),
-                                                                       key=lambda item: item[1][1])))
-            elif sort == "DISTANCE":
-                data_info["dict_hotels_answer"] = dict(sorted(data_info["dict_hotels_answer"].items(),
-                                                              key=lambda item: item[1][1]))
-
-            if len(data_info["dict_hotels_answer"]) != 0:
-                keyboard = types.InlineKeyboardMarkup()
-                for i_key, i_value in data_info["dict_hotels_answer"].items():
-                    keyboard.add(types.InlineKeyboardButton(text=i_key + ' - ' + str(i_value[1]) + '$',
-                                                            callback_data=i_value[3]))
-
-                bot.send_message(message.chat.id, 'Пожалуйста, уточните желаемый отель:', reply_markup=keyboard)
-                bot.set_state(message.from_user.id, HotelInfoState.exact_hotel, message.chat.id)
-            else:
-                logger.warning("Отелей по запросу пользователя " + message.from_user.username + " не было найдено.")
-                bot.send_message(message.chat.id, "К сожалению, по вашему запросу не было найдено "
-                                                  "ни одного подходящего отеля. Пожалуйста, попробуйте запустить "
-                                                  "поиск отелей с другими параметрами.")
-                bot.send_message(message.chat.id, "Работа по поиску отелей завершена. Чтобы запустить новый поиск "
-                                                  "или посмотреть историю поиска, выберите соответствующую команду "
-                                                  "в меню бота.")
-                logger.info("Команда " + data_info["command"] + " завершена.")
-                # bot.delete_state(message.from_user.id, message.chat.id)
+            bot.set_state(message.from_user.id, HotelInfoState.hotels_list, message.chat.id)
+            bot.send_message(message.chat.id, "Ищу отели...")
     else:
         logger.warning("Пользователь " + message.from_user.username + " неверно выбрал количество фотографий: "
                        + message.text)
-        bot.send_message(message.from_user.id,
-                         "Что-то пошло не так. Либо вы ввели число не от 1 до 5, либо вы ввели "
+        bot.send_message(message.from_user.id, "Что-то пошло не так. Либо вы ввели число не от 1 до 5, либо вы ввели "
                          "не число. Попробуйте снова: сколько вам нужно фотографий?")
+
+
+@logger.catch()
+@bot.callback_query_handler(func=lambda call: True, state=HotelInfoState.hotels_list)
+def get_hotels_list(call: CallbackQuery) -> None:
+    url_hotels = "properties/v2/list"
+    with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data_info:
+        logger.info("Бот начал поиск подходящих отелей.")
+        data_info["hotels_photos"] = int(call.message.text)
+        date_check_in = date(int(data_info["check_in_date"][:4]),
+                             int(data_info["check_in_date"][5:7]),
+                             int(data_info["check_in_date"][8:]))
+        date_check_out = date(int(data_info["check_out_date"][:4]),
+                              int(data_info["check_out_date"][5:7]),
+                              int(data_info["check_out_date"][8:]))
+        data_info["nights"] = date_check_out - date_check_in
+        children = []
+        price_filter = {}
+
+        if "children_age" in data_info.keys():
+            for i in data_info["children_age"].keys():
+                children.append({"age": data_info["children_age"][i]})
+        if "price" in data_info.keys() and isinstance(data_info["price"], list):
+            price_filter = {
+                "max": data_info["price"][1],
+                "min": data_info["price"][0]
+            }
+
+        if data_info['command'] == '/lowprice':
+            sort = "PRICE_LOW_TO_HIGH"
+        elif data_info['command'] == '/highprice':
+            sort = "PRICE_HIGH_TO_LOW"
+        elif data_info['command'] == '/bestdeal':
+            sort = "DISTANCE"
+
+        payload = {
+            "currency": "USD",
+            "eapid": 1,
+            "locale": "ru_RU",
+            "siteId": 300000001,
+            "destination": {"regionId": str(data_info["city_id"])},
+            "checkInDate": {
+                "day": int(data_info["check_in_date"][8:]),
+                "month": int(data_info["check_in_date"][5:7]),
+                "year": int(data_info["check_in_date"][:4])},
+            "checkOutDate": {
+                "day": int(data_info["check_out_date"][8:]),
+                "month": int(data_info["check_out_date"][5:7]),
+                "year": int(data_info["check_out_date"][:4])},
+            "rooms": [
+                {
+                    "adults": data_info["adults"],
+                    "children": children
+                }
+            ],
+            "resultsStartingIndex": 0,
+            "resultsSize": 200,
+            "sort": sort,
+            "filters": {
+                "availableFilter": "SHOW_AVAILABLE_ONLY",
+                "price": price_filter
+            }
+        }
+
+        response = api_request(url_hotels, payload, "POST")
+        dict_hotels = json.loads(response)
+        data_info["dict_hotels_answer"] = {}
+
+        for hotel in dict_hotels["data"]["propertySearch"]["properties"]:
+            hotel_id = hotel["id"]
+            hotel_name = hotel["name"]
+            hotel_night_price = round(hotel["price"]["lead"]["amount"], 2)
+            hotel_total_price = round(hotel_night_price * data_info["nights"].days, 2)
+            hotel_distance = hotel["destinationInfo"]["distanceFromDestination"]["value"]
+            if ("price" not in data_info.keys() or data_info["price"][0] <= hotel_total_price <=
+                data_info["price"][1]) and ("dest" not in data_info.keys() or (data_info["dest"][0] <=
+                                                                               round(hotel_distance, 2) <=
+                                                                               data_info["dest"][1])):
+                data_info["dict_hotels_answer"][hotel_name] = [hotel_night_price, hotel_total_price, hotel_distance,
+                                                               hotel_id]
+            if len(data_info["dict_hotels_answer"]) == data_info["hotels_number"]:
+                break
+        else:
+            logger.info("Бот завершил поиск подходящих отелей.")
+
+        if sort == "PRICE_HIGH_TO_LOW":
+            data_info["dict_hotels_answer"] = dict(reversed(sorted(data_info["dict_hotels_answer"].items(),
+                                                                   key=lambda item: item[1][1])))
+        elif sort == "DISTANCE":
+            data_info["dict_hotels_answer"] = dict(sorted(data_info["dict_hotels_answer"].items(),
+                                                          key=lambda item: item[1][1]))
+
+        if len(data_info["dict_hotels_answer"]) != 0:
+            keyboard = types.InlineKeyboardMarkup()
+            for i_key, i_value in data_info["dict_hotels_answer"].items():
+                keyboard.add(types.InlineKeyboardButton(text=i_key + ' - ' + str(i_value[1]) + '$',
+                                                        callback_data=i_value[3]))
+
+            bot.send_message(call.message.chat.id, 'Пожалуйста, уточните желаемый отель:', reply_markup=keyboard)
+            bot.set_state(call.from_user.id, HotelInfoState.exact_hotel, call.message.chat.id)
+        else:
+            logger.warning("Отелей по запросу пользователя " + call.message.from_user.username + " не было найдено.")
+            bot.send_message(call.message.chat.id, "К сожалению, по вашему запросу не было найдено ни одного "
+                                              "подходящего отеля. Пожалуйста, попробуйте запустить поиск отелей "
+                                              "с другими параметрами.")
+            bot.send_message(call.message.chat.id, "Работа по поиску отелей завершена. Чтобы запустить новый поиск "
+                                              "или посмотреть историю поиска, выберите соответствующую команду "
+                                              "в меню бота.")
+            logger.info("Команда " + data_info["command"] + " завершена.")
+            bot.delete_state(call.from_user.id, call.message.chat.id)
 
 
 @logger.catch()
 @bot.callback_query_handler(func=lambda call: True, state=HotelInfoState.exact_hotel)
 def get_exact_hotel(call: CallbackQuery) -> None:
+    bot.send_message(call.message.chat.id, "Уточняю информацию...")
     with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data_info:
         for i_key, i_value in data_info["dict_hotels_answer"].items():
             if i_value[3] == call.data:
                 logger.info("Пользователь " + call.message.chat.username + " уточнил отель: " + i_key)
                 break
 
-    url_photo = "properties/v2/detail"
-    with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data_info:
         logger.info("Бот начал поиск информации по уточнённому отелю.")
+
+        url_photo = "properties/v2/detail"
         exact_hotel_id = call.data
         payload = {
             "currency": "USD",
@@ -647,7 +603,11 @@ def get_exact_hotel(call: CallbackQuery) -> None:
                                                         if call.data == deep_value:
                                                             url = 'https://www.hotels.com/h{}.Hotel-Information'.\
                                                                 format(value[3])
-                                                            text_message = f"Вы выбрали следующий отель: {key}\n" \
+                                                            text_message = f"ВАШИ ДАННЫЕ \n" \
+                                                                           f"Взрослых гостей: " \
+                                                                           f"{str(data_info['adults'])}\n" \
+                                                                           f"Детей: {str(data_info['children'])}\n" \
+                                                                           f"Вы выбрали следующий отель: {key}\n" \
                                                                            f"Адрес: {data_info['hotel_address']}\n" \
                                                                            f"Дата заезда: " \
                                                                            f"{data_info['check_in_date']}\n" \
