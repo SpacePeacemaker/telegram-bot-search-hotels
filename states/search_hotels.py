@@ -17,5 +17,6 @@ class HotelInfoState(StatesGroup):
     check_out_date = State()
     hotel_photos = State()
     exact_photos = State()
+    start_process = State()
     hotels_list = State()
     exact_hotel = State()

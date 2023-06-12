@@ -433,7 +433,10 @@ def get_photos(call: CallbackQuery) -> None:
     elif call.data == 'no':
         logger.info("Пользователь " + call.message.chat.username + " выбрал, что ему не нужны фотографии.")
         bot.set_state(call.from_user.id, HotelInfoState.hotels_list, call.message.chat.id)
-        bot.send_message(call.message.chat.id, "Ищу отели...")
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(text='Начать поиск отелей', callback_data='start_process'))
+        bot.send_message(call.message.chat.id, 'Всё готово! Теперь нажимте кнопку "Начать поиск отелей", '
+                                               'чтобы запустить процесс поиска.', reply_markup=keyboard)
 
 
 @logger.catch()
@@ -443,8 +446,11 @@ def get_exact_photos(message: Message) -> None:
         logger.info("Пользователь " + message.from_user.username + " выбрал количество фотографий: " + message.text)
         with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
             data_info["hotels_photos"] = int(message.text)
-            bot.set_state(message.from_user.id, HotelInfoState.hotels_list, message.chat.id)
-            bot.send_message(message.chat.id, "Ищу отели...")
+        bot.set_state(message.from_user.id, HotelInfoState.hotels_list, message.chat.id)
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(text='Начать поиск отелей', callback_data='start_process'))
+        bot.send_message(message.chat.id, 'Всё готово! Теперь нажимте кнопку "Начать поиск отелей", '
+                                          'чтобы запустить процесс поиска.', reply_markup=keyboard)
     else:
         logger.warning("Пользователь " + message.from_user.username + " неверно выбрал количество фотографий: "
                        + message.text)
@@ -453,12 +459,12 @@ def get_exact_photos(message: Message) -> None:
 
 
 @logger.catch()
-@bot.callback_query_handler(func=lambda call: True, state=HotelInfoState.hotels_list)
+@bot.callback_query_handler(func=lambda call: 'start_process', state=HotelInfoState.hotels_list)
 def get_hotels_list(call: CallbackQuery) -> None:
     url_hotels = "properties/v2/list"
     with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data_info:
+        bot.send_message(call.message.chat.id, "Ищу отели...")
         logger.info("Бот начал поиск подходящих отелей.")
-        data_info["hotels_photos"] = int(call.message.text)
         date_check_in = date(int(data_info["check_in_date"][:4]),
                              int(data_info["check_in_date"][5:7]),
                              int(data_info["check_in_date"][8:]))
@@ -553,11 +559,11 @@ def get_hotels_list(call: CallbackQuery) -> None:
         else:
             logger.warning("Отелей по запросу пользователя " + call.message.from_user.username + " не было найдено.")
             bot.send_message(call.message.chat.id, "К сожалению, по вашему запросу не было найдено ни одного "
-                                              "подходящего отеля. Пожалуйста, попробуйте запустить поиск отелей "
-                                              "с другими параметрами.")
+                                                   "подходящего отеля. Пожалуйста, попробуйте запустить поиск отелей "
+                                                   "с другими параметрами.")
             bot.send_message(call.message.chat.id, "Работа по поиску отелей завершена. Чтобы запустить новый поиск "
-                                              "или посмотреть историю поиска, выберите соответствующую команду "
-                                              "в меню бота.")
+                                                   "или посмотреть историю поиска, выберите соответствующую команду "
+                                                   "в меню бота.")
             logger.info("Команда " + data_info["command"] + " завершена.")
             bot.delete_state(call.from_user.id, call.message.chat.id)
 
@@ -584,65 +590,41 @@ def get_exact_hotel(call: CallbackQuery) -> None:
             "propertyId": str(exact_hotel_id)
         }
         response = api_request(url_photo, payload, "POST")
-        dict_photos = json.loads(response)
+        info_hotels = json.loads(response)
         count = 0
 
-        for my_value in dict_photos.values():
-            for i_value in my_value.values():
-                for j_key, j_value in i_value.items():
-                    if j_key == "summary":
-                        for k1_key, k1_value in j_value.items():
-                            if k1_key == "location":
-                                for l1_key, l1_value in k1_value.items():
-                                    if l1_key == "address":
-                                        for m1_key, m1_value in l1_value.items():
-                                            if m1_key == "addressLine":
-                                                data_info["hotel_address"] = m1_value
-                                                for key, value in data_info["dict_hotels_answer"].items():
-                                                    for deep_key, deep_value in enumerate(value):
-                                                        if call.data == deep_value:
-                                                            url = 'https://www.hotels.com/h{}.Hotel-Information'.\
-                                                                format(value[3])
-                                                            text_message = f"ВАШИ ДАННЫЕ \n" \
-                                                                           f"Взрослых гостей: " \
-                                                                           f"{str(data_info['adults'])}\n" \
-                                                                           f"Детей: {str(data_info['children'])}\n" \
-                                                                           f"Вы выбрали следующий отель: {key}\n" \
-                                                                           f"Адрес: {data_info['hotel_address']}\n" \
-                                                                           f"Дата заезда: " \
-                                                                           f"{data_info['check_in_date']}\n" \
-                                                                           f"Дата выезда: " \
-                                                                           f"{data_info['check_out_date']}\n" \
-                                                                           f"Стоимость за 1 ночь: {str(value[0])}$\n" \
-                                                                           f"Стоимость за " \
-                                                                           f"{data_info['nights'].days} дней:" \
-                                                                           f" {str(value[1])}$\n" \
-                                                                           f"Расстояние до центра города: " \
-                                                                           f"{str(value[2])} км\nСсылка на отель: " \
-                                                                           f"{url}"
-                                                            bot.send_message(call.message.chat.id, text_message)
-                                                            logger.info("Пользователь " + call.message.chat.username +
-                                                                        " получил информацию об отеле.")
-                                                            break
-                                                break
-                    elif j_key == 'propertyGallery' and data_info["hotels_photos"] != 0:
-                        for k2_key, k2_value in j_value.items():
-                            if k2_key == "images":
-                                for l2_value in k2_value:
-                                    if count != data_info["hotels_photos"]:
-                                        for m2_key, m2_value in l2_value.items():
-                                            if m2_key == "image":
-                                                for n2_key, n2_value in m2_value.items():
-                                                    if n2_key == "url":
-                                                        count += 1
-                                                        bot.send_message(call.message.chat.id,
-                                                                         f"Отправляю {count}-ю фотографию:")
-                                                        bot.send_photo(call.message.chat.id, n2_value)
-                                                        break
-                                    else:
-                                        logger.info("Пользователь " + call.message.chat.username +
-                                                    " получил все фотографии.")
-                                        break
+        data_info["hotel_address"] = \
+            info_hotels["data"]["propertyInfo"]["summary"]["location"]["address"]["addressLine"]
+
+        for key, value in data_info["dict_hotels_answer"].items():
+            for deep_key, deep_value in enumerate(value):
+                if call.data == deep_value:
+                    url = 'https://www.hotels.com/h{}.Hotel-Information'.format(value[3])
+                    text_message = f"ВАШИ ДАННЫЕ \n" \
+                                   f"Взрослых гостей: {str(data_info['adults'])}\n" \
+                                   f"Детей: {str(data_info['children'])}\n" \
+                                   f"Вы выбрали следующий отель: {key}\n" \
+                                   f"Адрес: {data_info['hotel_address']}\n" \
+                                   f"Дата заезда: {data_info['check_in_date']}\n" \
+                                   f"Дата выезда: {data_info['check_out_date']}\n" \
+                                   f"Стоимость за 1 ночь: {str(value[0])}$\n" \
+                                   f"Стоимость за {data_info['nights'].days} дней: {str(value[1])}$\n" \
+                                   f"Расстояние до центра города: {str(value[2])} км\n" \
+                                   f"Ссылка на отель: {url}"
+                    bot.send_message(call.message.chat.id, text_message)
+                    logger.info("Пользователь " + call.message.chat.username + " получил информацию об отеле.")
+                    break
+
+        if data_info["hotels_photos"] != 0:
+            for photo in info_hotels["data"]["propertyInfo"]["propertyGallery"]["images"]:
+                if count != data_info["hotels_photos"]:
+                    count += 1
+                    bot.send_message(call.message.chat.id, f"Отправляю {count}-ю фотографию:")
+                    bot.send_photo(call.message.chat.id, photo["image"]["url"])
+                else:
+                    logger.info("Пользователь " + call.message.chat.username + " получил все фотографии.")
+                    break
+
         bot.send_message(call.message.chat.id, "Работа по поиску отелей завершена. Чтобы запустить новый поиск "
                                                "или посмотреть историю поиска, выберите соответствующую команду "
                                                "в меню бота.")
