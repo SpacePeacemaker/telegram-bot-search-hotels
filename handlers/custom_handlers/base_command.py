@@ -1,15 +1,16 @@
-import json
 from datetime import date
 
-import requests
 from telebot import types
 from telebot.types import Message, CallbackQuery
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
 from loguru import logger
-from config_data import config
+
+from database.db_info import History, User
 from loader import bot
 from states.search_hotels import HotelInfoState
+from database import db_info, write_to_db
+from utils.misc import api_city_list, api_hotels_list, api_hotel_info
 
 
 class MyStyleCalendar(DetailedTelegramCalendar):
@@ -19,77 +20,28 @@ class MyStyleCalendar(DetailedTelegramCalendar):
 
 
 LSTEP = {'y': 'год', 'm': 'месяц', 'd': 'день'}
-headers = {
-    "content-type": "application/json",
-    "X-RapidAPI-Key": config.RAPID_API_KEY,
-    "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
-}
 logger.add("logs/logs.log", format="{time} {level} {message}", level="DEBUG", rotation="1 week", compression="zip")
-
-
-def get_key(d, user_value):
-    for k, v in d.items():
-        if v == user_value:
-            return k
-
-
-@logger.catch()
-def api_request(method_endswith, params, method_type):
-    url = f"https://hotels4.p.rapidapi.com/{method_endswith}"
-
-    if method_type == "GET":
-        return get_request(
-            url=url,
-            params=params
-        )
-    else:
-        return post_request(
-            url=url,
-            params=params
-        )
-
-
-def get_request(url, params):
-    try:
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=15
-        )
-        if response.status_code == requests.codes.ok:
-            return response.text
-    except TypeError:
-        print("Ошибка!")
-
-
-def post_request(url, params):
-    try:
-        response = requests.post(
-            url,
-            json=params,
-            headers=headers,
-            timeout=15
-        )
-        if response.status_code == requests.codes.ok:
-            return response.text
-    except TypeError:
-        print("Ошибка!")
 
 
 @logger.catch()
 @bot.message_handler(commands=['lowprice', 'highprice', 'bestdeal'])
 def price(message: Message) -> None:
+    # with db.db:
+    #     db.db.User.create(name=message.from_user.username, telegram_id=message.from_user.id)
     logger.info("Пользователь " + message.from_user.username + " ввёл команду: " + message.text)
     bot.set_state(message.from_user.id, HotelInfoState.command, message.chat.id)
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
         data_info["command"] = message.text
+        data_info["price"] = 0
+        data_info["dest"] = 0
         if message.text == '/lowprice':
             sort_message = "САМОЙ НИЗКОЙ"
         elif message.text == '/highprice':
             sort_message = "САМОЙ ВЫСОКОЙ"
         elif message.text == '/bestdeal':
             sort_message = "УСТАНОВЛЕННЫМИ ВАМИ РАССТОЯНИЮ ДО ЦЕНТРА ГОРОДА И"
+            data_info["price"] = []
+            data_info["dest"] = []
 
         bot.set_state(message.from_user.id, HotelInfoState.city, message.chat.id)
         bot.send_message(message.from_user.id, f"{message.from_user.first_name}, сейчас я поищу отели по "
@@ -102,27 +54,8 @@ def price(message: Message) -> None:
 def get_city(message: Message) -> None:
     logger.info("Пользователь " + message.from_user.username + " ввёл следующее местоположение: " + message.text)
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
-        data_info["dict_answer"] = {}
         if message.text.isalpha():
-            querystring = {"q": message.text, "locale": "ru_RU"}
-            url_city = "locations/v3/search"
-            response = api_request(url_city, querystring, "GET")
-            result = json.loads(response)
-            for key, value in result.items():
-                if key == "sr":
-                    for i_dict in value:
-                        for i_key, i_value in i_dict.items():
-                            if i_key == "gaiaId":
-                                new_key = i_value
-                            elif i_key == "type":
-                                if i_value not in ("CITY", "NEIGHBORHOOD", "MULTIREGION"):
-                                    new_key = None
-                            elif i_key == "regionNames" and new_key is not None:
-                                for j_key, j_value in i_value.items():
-                                    if j_key == "fullName":
-                                        data_info["dict_answer"][new_key] = j_value
-                                        break
-
+            data_info["dict_answer"] = api_city_list.get_city_list(message.text)
             keyboard = types.InlineKeyboardMarkup()
             for i_key, i_value in data_info["dict_answer"].items():
                 keyboard.add(types.InlineKeyboardButton(text=i_value, callback_data=i_key))
@@ -183,8 +116,6 @@ def get_children(message: Message) -> None:
                                                        "посмотреть (не более 10-ти).")
                 bot.set_state(message.from_user.id, HotelInfoState.hotels_number, message.chat.id)
             elif int(message.text) == 0 and data_info["command"] == '/bestdeal':
-                data_info["price"] = []
-                data_info["dest"] = []
                 bot.set_state(message.from_user.id, HotelInfoState.price_min, message.chat.id)
                 bot.send_message(message.from_user.id, "Отлично! Теперь введите МИНИМАЛЬНУЮ СТОИМОСТЬ (в долларах) "
                                                        "за всю поездку, которую вы готовы потратить на отель.")
@@ -225,8 +156,6 @@ def get_age_children(message: Message) -> None:
             bot.send_message(message.from_user.id, f"Напишите возраст {len(data_info['children_age']) + 1}-го ребёнка:")
             bot.set_state(message.from_user.id, HotelInfoState.exact_age_children, message.chat.id)
         elif data_info["command"] == '/bestdeal':
-            data_info["price"] = []
-            data_info["dest"] = []
             bot.set_state(message.from_user.id, HotelInfoState.price_min, message.chat.id)
             logger.info("Пользователь " + message.from_user.username + " закончил вводить возраст детей.")
             bot.send_message(message.from_user.id, "Отлично! Теперь введите МИНИМАЛЬНУЮ СТОИМОСТЬ (в долларах) "
@@ -461,7 +390,6 @@ def get_exact_photos(message: Message) -> None:
 @logger.catch()
 @bot.callback_query_handler(func=lambda call: 'start_process', state=HotelInfoState.hotels_list)
 def get_hotels_list(call: CallbackQuery) -> None:
-    url_hotels = "properties/v2/list"
     with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data_info:
         bot.send_message(call.message.chat.id, "Ищу отели...")
         logger.info("Бот начал поиск подходящих отелей.")
@@ -520,26 +448,10 @@ def get_hotels_list(call: CallbackQuery) -> None:
             }
         }
 
-        response = api_request(url_hotels, payload, "POST")
-        dict_hotels = json.loads(response)
-        data_info["dict_hotels_answer"] = {}
-
-        for hotel in dict_hotels["data"]["propertySearch"]["properties"]:
-            hotel_id = hotel["id"]
-            hotel_name = hotel["name"]
-            hotel_night_price = round(hotel["price"]["lead"]["amount"], 2)
-            hotel_total_price = round(hotel_night_price * data_info["nights"].days, 2)
-            hotel_distance = hotel["destinationInfo"]["distanceFromDestination"]["value"]
-            if ("price" not in data_info.keys() or data_info["price"][0] <= hotel_total_price <=
-                data_info["price"][1]) and ("dest" not in data_info.keys() or (data_info["dest"][0] <=
-                                                                               round(hotel_distance, 2) <=
-                                                                               data_info["dest"][1])):
-                data_info["dict_hotels_answer"][hotel_name] = [hotel_night_price, hotel_total_price, hotel_distance,
-                                                               hotel_id]
-            if len(data_info["dict_hotels_answer"]) == data_info["hotels_number"]:
-                break
-        else:
-            logger.info("Бот завершил поиск подходящих отелей.")
+        data_info["dict_hotels_answer"] = api_hotels_list.get_hotel_list(payload, data_info["nights"],
+                                                                         data_info["price"], data_info["dest"],
+                                                                         data_info["hotels_number"])
+        logger.info("Бот завершил поиск подходящих отелей.")
 
         if sort == "PRICE_HIGH_TO_LOW":
             data_info["dict_hotels_answer"] = dict(reversed(sorted(data_info["dict_hotels_answer"].items(),
@@ -576,33 +488,21 @@ def get_exact_hotel(call: CallbackQuery) -> None:
         for i_key, i_value in data_info["dict_hotels_answer"].items():
             if i_value[3] == call.data:
                 logger.info("Пользователь " + call.message.chat.username + " уточнил отель: " + i_key)
+                data_info["hotel"] = i_key
                 break
 
         logger.info("Бот начал поиск информации по уточнённому отелю.")
 
-        url_photo = "properties/v2/detail"
-        exact_hotel_id = call.data
-        payload = {
-            "currency": "USD",
-            "eapid": 1,
-            "locale": "ru_RU",
-            "siteId": 300000001,
-            "propertyId": str(exact_hotel_id)
-        }
-        response = api_request(url_photo, payload, "POST")
-        info_hotels = json.loads(response)
-        count = 0
-
-        data_info["hotel_address"] = \
-            info_hotels["data"]["propertyInfo"]["summary"]["location"]["address"]["addressLine"]
+        data_info["hotel_address"], photos_list = api_hotel_info.get_hotel_info(call.data, data_info["hotels_photos"])
 
         for key, value in data_info["dict_hotels_answer"].items():
             for deep_key, deep_value in enumerate(value):
                 if call.data == deep_value:
-                    url = 'https://www.hotels.com/h{}.Hotel-Information'.format(value[3])
+                    data_info["url"] = 'https://www.hotels.com/h{}.Hotel-Information'.format(value[3])
                     text_message = f"ВАШИ ДАННЫЕ \n" \
                                    f"Взрослых гостей: {str(data_info['adults'])}\n" \
                                    f"Детей: {str(data_info['children'])}\n" \
+                                   f"Город: {data_info['city']}\n" \
                                    f"Вы выбрали следующий отель: {key}\n" \
                                    f"Адрес: {data_info['hotel_address']}\n" \
                                    f"Дата заезда: {data_info['check_in_date']}\n" \
@@ -610,20 +510,57 @@ def get_exact_hotel(call: CallbackQuery) -> None:
                                    f"Стоимость за 1 ночь: {str(value[0])}$\n" \
                                    f"Стоимость за {data_info['nights'].days} дней: {str(value[1])}$\n" \
                                    f"Расстояние до центра города: {str(value[2])} км\n" \
-                                   f"Ссылка на отель: {url}"
+                                   f"Ссылка на отель: {data_info['url']}"
                     bot.send_message(call.message.chat.id, text_message)
                     logger.info("Пользователь " + call.message.chat.username + " получил информацию об отеле.")
                     break
 
-        if data_info["hotels_photos"] != 0:
-            for photo in info_hotels["data"]["propertyInfo"]["propertyGallery"]["images"]:
+        if len(photos_list) != 0:
+            count = 0
+            for photo in photos_list:
                 if count != data_info["hotels_photos"]:
                     count += 1
                     bot.send_message(call.message.chat.id, f"Отправляю {count}-ю фотографию:")
-                    bot.send_photo(call.message.chat.id, photo["image"]["url"])
+                    bot.send_photo(call.message.chat.id, photo)
                 else:
                     logger.info("Пользователь " + call.message.chat.username + " получил все фотографии.")
                     break
+
+        # with db_info.db:
+        #     db_info.db.create_tables([User, History])
+        #     tg_user = User.create(name=call.from_user.username, telegram_id=call.from_user.id)
+        #     tg_user.save()
+        #     tg_history = History()
+        #     tg_history.date = date.today()
+        #     tg_history.command = data_info["command"]
+        #     tg_history.city = data_info["city"]
+        #     tg_history.city_id = data_info["city_id"]
+        #     tg_history.adults = data_info["adults"]
+        #     tg_history.children = data_info["children"]
+        #     tg_history.hotel_photos = data_info["hotels_photos"]
+        #     tg_history.nights = data_info["nights"]
+        #     tg_history.exact_hotel = data_info["hotel"]
+        #     tg_history.url_hotel = data_info["url"]
+        #     tg_history.check_in_date = data_info["check_in_date"]
+        #     tg_history.check_out_date = data_info["check_out_date"]
+        #
+        #     if "children_age" in data_info.keys():
+        #         for age in data_info["children_age"].values():
+        #             new_row_age = tg_history.exact_age_children + age + "\n"
+        #             tg_history.update(exact_age_children=new_row_age)
+        #
+        #     if len(photos_list) != 0:
+        #         for url in photos_list:
+        #             new_row_url = url + "\n"
+        #             tg_history.update(urls_photos=str(tg_history.urls_photos) + new_row_url)
+        #
+        #     if "price_min" in data_info.keys():
+        #         tg_history.price_min = data_info["price_min"]
+        #         tg_history.price_max = data_info["price_max"]
+        #         tg_history.price_max = data_info["dest_min"]
+        #         tg_history.price_max = data_info["dest_max"]
+        #
+        #     tg_history.save()
 
         bot.send_message(call.message.chat.id, "Работа по поиску отелей завершена. Чтобы запустить новый поиск "
                                                "или посмотреть историю поиска, выберите соответствующую команду "
