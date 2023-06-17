@@ -1,4 +1,4 @@
-from datetime import date
+# from datetime import date
 
 from telebot import types
 from telebot.types import Message, CallbackQuery
@@ -6,10 +6,9 @@ from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
 from loguru import logger
 
-from database.db_info import History, User
+from database.db_info import *
 from loader import bot
 from states.search_hotels import HotelInfoState
-from database import db_info, write_to_db
 from utils.misc import api_city_list, api_hotels_list, api_hotel_info
 
 
@@ -26,22 +25,20 @@ logger.add("logs/logs.log", format="{time} {level} {message}", level="DEBUG", ro
 @logger.catch()
 @bot.message_handler(commands=['lowprice', 'highprice', 'bestdeal'])
 def price(message: Message) -> None:
-    # with db.db:
-    #     db.db.User.create(name=message.from_user.username, telegram_id=message.from_user.id)
     logger.info("Пользователь " + message.from_user.username + " ввёл команду: " + message.text)
     bot.set_state(message.from_user.id, HotelInfoState.command, message.chat.id)
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
         data_info["command"] = message.text
-        data_info["price"] = 0
-        data_info["dest"] = 0
+        data_info["price_bestdeal"] = 0
+        data_info["dest_bestdeal"] = 0
         if message.text == '/lowprice':
             sort_message = "САМОЙ НИЗКОЙ"
         elif message.text == '/highprice':
             sort_message = "САМОЙ ВЫСОКОЙ"
         elif message.text == '/bestdeal':
             sort_message = "УСТАНОВЛЕННЫМИ ВАМИ РАССТОЯНИЮ ДО ЦЕНТРА ГОРОДА И"
-            data_info["price"] = []
-            data_info["dest"] = []
+            data_info["price_bestdeal"] = []
+            data_info["dest_bestdeal"] = []
 
         bot.set_state(message.from_user.id, HotelInfoState.city, message.chat.id)
         bot.send_message(message.from_user.id, f"{message.from_user.first_name}, сейчас я поищу отели по "
@@ -172,7 +169,7 @@ def get_age_children(message: Message) -> None:
 def get_price_min(message: Message) -> None:
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
         if message.text.isdigit() and int(message.text) >= 0:
-            data_info["price"].append(int(message.text))
+            data_info["price_bestdeal"].append(int(message.text))
             bot.set_state(message.from_user.id, HotelInfoState.price_max, message.chat.id)
             bot.send_message(message.from_user.id, "Отлично! Теперь напишите МАКСИМАЛЬНУЮ СУММУ (в долларах) "
                                                    "за всю поездку, которую вы готовы потратить на отель.")
@@ -191,7 +188,7 @@ def get_price_min(message: Message) -> None:
 def get_price_max(message: Message) -> None:
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
         if message.text.isdigit() and int(message.text) >= 0:
-            data_info["price"].append(int(message.text))
+            data_info["price_bestdeal"].append(int(message.text))
             bot.set_state(message.from_user.id, HotelInfoState.dest_min, message.chat.id)
             bot.send_message(message.from_user.id, "Отлично! Теперь напишите МИНИМАЛЬНОЕ РАССТОЯНИЕ ОТ ОТЕЛЯ "
                                                    "ДО ЦЕНТРА ГОРОДА (в километрах).")
@@ -210,7 +207,7 @@ def get_price_max(message: Message) -> None:
 def get_dest_min(message: Message) -> None:
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
         if message.text.isdigit() and int(message.text) >= 0:
-            data_info["dest"].append(int(message.text))
+            data_info["dest_bestdeal"].append(int(message.text))
             bot.set_state(message.from_user.id, HotelInfoState.dest_max, message.chat.id)
             bot.send_message(message.from_user.id, "Отлично! Теперь напишите МАКСИМАЛЬНОЕ РАССТОЯНИЕ ОТ ОТЕЛЯ "
                                                    "ДО ЦЕНТРА ГОРОДА (в километрах).")
@@ -229,7 +226,7 @@ def get_dest_min(message: Message) -> None:
 def get_dest_max(message: Message) -> None:
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
         if message.text.isdigit() and int(message.text) >= 0:
-            data_info["dest"].append(int(message.text))
+            data_info["dest_bestdeal"].append(int(message.text))
             bot.send_message(message.from_user.id, "Отлично! Теперь напишите КОЛИЧЕСТВО ОТЕЛЕЙ, которые вы хотите "
                                                    "посмотреть (не более 10-ти).")
             bot.set_state(message.from_user.id, HotelInfoState.hotels_number, message.chat.id)
@@ -343,7 +340,7 @@ def cal_out(call: CallbackQuery) -> None:
 
         with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data_info:
             data_info["check_out_date"] = str(result_two)   # форма записи: yyyy-mm-dd
-            data_info["hotels_photos"] = 0
+            data_info["hotel_photos"] = 0
 
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(text='Да', callback_data='yes'))
@@ -374,7 +371,7 @@ def get_exact_photos(message: Message) -> None:
     if message.text.isdigit() and 0 < int(message.text) <= 5:
         logger.info("Пользователь " + message.from_user.username + " выбрал количество фотографий: " + message.text)
         with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
-            data_info["hotels_photos"] = int(message.text)
+            data_info["hotel_photos"] = int(message.text)
         bot.set_state(message.from_user.id, HotelInfoState.hotels_list, message.chat.id)
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(text='Начать поиск отелей', callback_data='start_process'))
@@ -449,7 +446,8 @@ def get_hotels_list(call: CallbackQuery) -> None:
         }
 
         data_info["dict_hotels_answer"] = api_hotels_list.get_hotel_list(payload, data_info["nights"],
-                                                                         data_info["price"], data_info["dest"],
+                                                                         data_info["price_bestdeal"],
+                                                                         data_info["dest_bestdeal"],
                                                                          data_info["hotels_number"])
         logger.info("Бот завершил поиск подходящих отелей.")
 
@@ -459,6 +457,47 @@ def get_hotels_list(call: CallbackQuery) -> None:
         elif sort == "DISTANCE":
             data_info["dict_hotels_answer"] = dict(sorted(data_info["dict_hotels_answer"].items(),
                                                           key=lambda item: item[1][1]))
+
+        with db:
+            db.create_tables([User, History])
+            user = [
+                {'name': call.from_user.username, 'telegram_id': call.from_user.id}
+            ]
+            try:
+                User.insert(user).execute()
+            except BaseException:
+                pass
+
+            users = User.select()
+            history = [
+                {
+                    'user_id': users.select().where(User.telegram_id == call.from_user.id),
+                    'command': data_info["command"], 'city': data_info["city"], 'city_id': data_info["city_id"],
+                    'adults': data_info["adults"], 'children': data_info["children"],
+                    'hotel_photos': data_info["hotel_photos"], 'nights': data_info["nights"].days,
+                    'check_in_date': data_info["check_in_date"], 'check_out_date': data_info["check_out_date"],
+                }
+            ]
+
+            History.insert(history).execute()
+
+            if "children_age" in data_info.keys():
+                age_list_row = ''
+                for age in data_info["children_age"].values():
+                    age_list_row += str(age) + "\n"
+                for row_history in History.select():
+                    if row_history.id == len(History):
+                        row_history.exact_age_children = age_list_row
+                        row_history.save()
+
+            if data_info["price_bestdeal"] and data_info["dest_bestdeal"] != 0:
+                for row_history in History.select():
+                    if row_history.id == len(History):
+                        row_history.price_min = data_info["price_bestdeal"][0]
+                        row_history.price_max = data_info["price_bestdeal"][1]
+                        row_history.dest_min = data_info["dest_bestdeal"][0]
+                        row_history.dest_max = data_info["dest_bestdeal"][1]
+                        row_history.save()
 
         if len(data_info["dict_hotels_answer"]) != 0:
             keyboard = types.InlineKeyboardMarkup()
@@ -493,12 +532,15 @@ def get_exact_hotel(call: CallbackQuery) -> None:
 
         logger.info("Бот начал поиск информации по уточнённому отелю.")
 
-        data_info["hotel_address"], photos_list = api_hotel_info.get_hotel_info(call.data, data_info["hotels_photos"])
+        data_info["hotel_address"], photos_list = api_hotel_info.get_hotel_info(call.data, data_info["hotel_photos"])
 
         for key, value in data_info["dict_hotels_answer"].items():
             for deep_key, deep_value in enumerate(value):
                 if call.data == deep_value:
                     data_info["url"] = 'https://www.hotels.com/h{}.Hotel-Information'.format(value[3])
+                    data_info["night_price"] = str(value[0])
+                    data_info["total_price"] = str(value[1])
+                    data_info["dest_hotel"] = str(value[2])
                     text_message = f"ВАШИ ДАННЫЕ \n" \
                                    f"Взрослых гостей: {str(data_info['adults'])}\n" \
                                    f"Детей: {str(data_info['children'])}\n" \
@@ -507,9 +549,9 @@ def get_exact_hotel(call: CallbackQuery) -> None:
                                    f"Адрес: {data_info['hotel_address']}\n" \
                                    f"Дата заезда: {data_info['check_in_date']}\n" \
                                    f"Дата выезда: {data_info['check_out_date']}\n" \
-                                   f"Стоимость за 1 ночь: {str(value[0])}$\n" \
-                                   f"Стоимость за {data_info['nights'].days} дней: {str(value[1])}$\n" \
-                                   f"Расстояние до центра города: {str(value[2])} км\n" \
+                                   f"Стоимость за 1 ночь: {data_info['night_price']}$\n" \
+                                   f"Стоимость за {data_info['nights'].days} дней: {data_info['total_price']}$\n" \
+                                   f"Расстояние до центра города: {data_info['dest_hotel']} км\n" \
                                    f"Ссылка на отель: {data_info['url']}"
                     bot.send_message(call.message.chat.id, text_message)
                     logger.info("Пользователь " + call.message.chat.username + " получил информацию об отеле.")
@@ -518,7 +560,7 @@ def get_exact_hotel(call: CallbackQuery) -> None:
         if len(photos_list) != 0:
             count = 0
             for photo in photos_list:
-                if count != data_info["hotels_photos"]:
+                if count != data_info["hotel_photos"]:
                     count += 1
                     bot.send_message(call.message.chat.id, f"Отправляю {count}-ю фотографию:")
                     bot.send_photo(call.message.chat.id, photo)
@@ -526,41 +568,33 @@ def get_exact_hotel(call: CallbackQuery) -> None:
                     logger.info("Пользователь " + call.message.chat.username + " получил все фотографии.")
                     break
 
-        # with db_info.db:
-        #     db_info.db.create_tables([User, History])
-        #     tg_user = User.create(name=call.from_user.username, telegram_id=call.from_user.id)
-        #     tg_user.save()
-        #     tg_history = History()
-        #     tg_history.date = date.today()
-        #     tg_history.command = data_info["command"]
-        #     tg_history.city = data_info["city"]
-        #     tg_history.city_id = data_info["city_id"]
-        #     tg_history.adults = data_info["adults"]
-        #     tg_history.children = data_info["children"]
-        #     tg_history.hotel_photos = data_info["hotels_photos"]
-        #     tg_history.nights = data_info["nights"]
-        #     tg_history.exact_hotel = data_info["hotel"]
-        #     tg_history.url_hotel = data_info["url"]
-        #     tg_history.check_in_date = data_info["check_in_date"]
-        #     tg_history.check_out_date = data_info["check_out_date"]
-        #
-        #     if "children_age" in data_info.keys():
-        #         for age in data_info["children_age"].values():
-        #             new_row_age = tg_history.exact_age_children + age + "\n"
-        #             tg_history.update(exact_age_children=new_row_age)
-        #
-        #     if len(photos_list) != 0:
-        #         for url in photos_list:
-        #             new_row_url = url + "\n"
-        #             tg_history.update(urls_photos=str(tg_history.urls_photos) + new_row_url)
-        #
-        #     if "price_min" in data_info.keys():
-        #         tg_history.price_min = data_info["price_min"]
-        #         tg_history.price_max = data_info["price_max"]
-        #         tg_history.price_max = data_info["dest_min"]
-        #         tg_history.price_max = data_info["dest_max"]
-        #
-        #     tg_history.save()
+        with db:
+            db.create_tables([User, History])
+            user = [
+                {'name': call.from_user.username, 'telegram_id': call.from_user.id}
+            ]
+
+            try:
+                User.insert(user).execute()
+            except BaseException:
+                pass
+
+            if len(photos_list) != 0:
+                url_list_row = ''
+                for url in photos_list:
+                    url_list_row += url + "\n"
+                for row_history in History.select():
+                    if row_history.id == len(History):
+                        row_history.urls_photos = url_list_row
+                        row_history.save()
+
+            for row_history in History.select():
+                if row_history.id == len(History):
+                    row_history.exact_hotel = data_info["hotel"]
+                    row_history.url_hotel = data_info["url"]
+                    row_history.night_price = data_info["night_price"]
+                    row_history.total_price = data_info["total_price"]
+                    row_history.save()
 
         bot.send_message(call.message.chat.id, "Работа по поиску отелей завершена. Чтобы запустить новый поиск "
                                                "или посмотреть историю поиска, выберите соответствующую команду "
