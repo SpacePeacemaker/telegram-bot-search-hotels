@@ -17,14 +17,15 @@ def history(message: Message) -> None:
                     user_histories = History.select().where(History.user_id == user.id)
                     keyboard = types.InlineKeyboardMarkup()
                     for user_history in user_histories:
-                        keyboard.add(types.InlineKeyboardButton(text=user_history.date + ' - ' + user_history.city,
-                                     callback_data=user_history.id))
+                        cb_data = 'history|' + str(user_history.id)
+                        keyboard.add(types.InlineKeyboardButton(text=user_history.date + ' - ' + user_history.city
+                                                                + ' - ' + user_history.command, callback_data=cb_data))
 
                     bot.send_message(message.chat.id, 'Пожалуйста, уточните ваш поиск, '
                                                            'детали которого вы хотели бы просмотреть:',
                                      reply_markup=keyboard)
-                    # bot.set_state(message.from_user.id, HistoryInfoState.exact_history, message.chat.id)
-                    break
+                    bot.set_state(message.from_user.id, HistoryInfoState.exact_history, message.chat.id)
+                    # break
                 else:
                     bot.send_message(message.chat.id, "В базе данных нет записей о вашей истории поисков. "
                                                            "Похоже, вы ещё ни разу не пользовались ботом. "
@@ -34,7 +35,7 @@ def history(message: Message) -> None:
 
 
 @logger.catch()
-@bot.callback_query_handler(func=lambda call: True)
+@bot.callback_query_handler(func=lambda call: call.data.split('|')[0] == "history", state=HistoryInfoState.exact_history)
 def get_exact_history(call: CallbackQuery) -> None:
     with db:
         try:
@@ -57,6 +58,6 @@ def get_exact_history(call: CallbackQuery) -> None:
                         'Фотографий: ' + str(user_history.hotel_photos) + '\n' + \
                         'Ссылки на фотографии: ' + '\n' + user_history.urls_photos + '\n'
                     bot.send_message(call.message.chat.id, text_message)
-                break
+                    # break
         except BaseException:
             pass
