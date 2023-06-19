@@ -1,4 +1,4 @@
-# from datetime import date
+from datetime import date
 
 from telebot import types
 from telebot.types import Message, CallbackQuery
@@ -471,7 +471,7 @@ def get_hotels_list(call: CallbackQuery) -> None:
             users = User.select()
             history = [
                 {
-                    'user_id': users.select().where(User.telegram_id == call.from_user.id),
+                    'user_id': users.select().where(User.telegram_id == call.from_user.id), 'date_time': datetime.now(),
                     'command': data_info["command"], 'city': data_info["city"], 'city_id': data_info["city_id"],
                     'adults': data_info["adults"], 'children': data_info["children"],
                     'hotel_photos': data_info["hotel_photos"], 'nights': data_info["nights"].days,
@@ -582,7 +582,10 @@ def get_exact_hotel(call: CallbackQuery) -> None:
             if len(photos_list) != 0:
                 url_list_row = ''
                 for url in photos_list:
-                    url_list_row += url + "\n"
+                    if url == photos_list[-1]:
+                        url_list_row += url
+                    else:
+                        url_list_row += url + "\n"
                 for row_history in History.select():
                     if row_history.id == len(History):
                         row_history.urls_photos = url_list_row

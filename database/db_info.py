@@ -1,5 +1,5 @@
 from peewee import *
-from datetime import date
+from datetime import datetime
 
 
 db = SqliteDatabase('database/search_history.db')
@@ -23,7 +23,7 @@ class User(BaseModel):
 
 class History(BaseModel):
     user = ForeignKeyField(User, backref="tg_user")
-    date = DateField(formats='%Y-%m-%d', default=date.today())
+    date_time = DateTimeField(default=datetime.now())
     command = CharField()
     city = TextField()
     city_id = IntegerField()
