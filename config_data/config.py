@@ -5,10 +5,12 @@ if not find_dotenv():
     exit('Переменные окружения не загружены т.к отсутствует файл .env')
 else:
     load_dotenv()
-
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-RAPID_API_KEY = os.getenv('RAPID_API_KEY')
-DEFAULT_COMMANDS = (
+"""
+Хранение токена бота, ключа API и списка команд бота
+"""
+BOT_TOKEN = os.getenv('BOT_TOKEN')  # токен бота
+RAPID_API_KEY = os.getenv('RAPID_API_KEY')  # ключ API
+DEFAULT_COMMANDS = (  # список команд бота
     ('start', "Запустить бота"),
     ('help', "Вывести справку"),
     ('lowprice', "Найти отель по самой низкой цене"),

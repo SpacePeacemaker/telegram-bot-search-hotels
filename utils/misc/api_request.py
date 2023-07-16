@@ -1,7 +1,7 @@
 import requests
 from config_data import config
 
-
+# заголовки для запроса
 headers = {
     "content-type": "application/json",
     "X-RapidAPI-Key": config.RAPID_API_KEY,
@@ -9,7 +9,14 @@ headers = {
 }
 
 
-def api_request(method_endswith, params, method_type):
+def api_request(method_endswith: str, params, method_type: str):
+    """
+    Функция взаимодействия с API.
+    :param method_endswith: str
+    :param params:
+    :param method_type: str
+    :return:
+    """
     url = f"https://hotels4.p.rapidapi.com/{method_endswith}"
 
     if method_type == "GET":
@@ -24,7 +31,13 @@ def api_request(method_endswith, params, method_type):
         )
 
 
-def get_request(url, params):
+def get_request(url: str, params) -> str:
+    """
+    GET-функция запроса к API.
+    :param url:
+    :param params:
+    :return: str
+    """
     try:
         response = requests.get(
             url,
@@ -38,7 +51,13 @@ def get_request(url, params):
         print("Ошибка!")
 
 
-def post_request(url, params):
+def post_request(url: str, params) -> str:
+    """
+    POST-функция запроса к API.
+    :param url: str
+    :param params:
+    :return: str
+    """
     try:
         response = requests.post(
             url,

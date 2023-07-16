@@ -1,18 +1,29 @@
 import json
+from datetime import date
+
 from utils.misc.api_request import api_request
 
 
-def get_hotel_list(user_payload, nights, price, dest, hotels_number):
+def get_hotels_list(user_payload: dict, nights: date, price: list, dest: list, hotels_number: int) -> dict:
+    """
+    Функция для получения списка отелей.
+    :param user_payload: dict
+    :param nights: date
+    :param price: list
+    :param dest: list
+    :param hotels_number: int
+    :return: dict
+    """
     url_hotels = "properties/v2/list"
     payload = user_payload
-    response = api_request(url_hotels, payload, "POST")
+    response = api_request(url_hotels, payload, "POST")  # получение ответа от API
 
-    if response:
-        dict_hotels = json.loads(response)
+    if response:  # если от API пришёл непустой ответ
+        dict_hotels = json.loads(response)  # расшифровка ответа из json
         hotels = dict()
         counter = 0
 
-        for hotel in dict_hotels["data"]["propertySearch"]["properties"]:
+        for hotel in dict_hotels["data"]["propertySearch"]["properties"]:  # вытаскиваем необходимую информацию об отеле
             hotel_id = hotel["id"]
             hotel_name = hotel["name"]
             hotel_night_price = round(hotel["price"]["lead"]["amount"], 2)
