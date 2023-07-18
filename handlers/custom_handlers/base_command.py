@@ -32,6 +32,11 @@ def price(message: Message) -> None:
         compression="zip"
     )  # создание лога или подключение к нему
 
+    # with db:  # подключение к базе данных для того, чтобы определить,
+    #     # работал ли этот пользователь с данным ботом или нет
+    #     db.create_tables([User, History])  # создание или подключение к таблицам пользователей и историй поиска
+    #     # определение пользователя
+
     logger.info("Пользователь " + message.from_user.username + " ввёл команду: " + message.text)
     bot.set_state(message.from_user.id, HotelInfoState.command, message.chat.id)  # установка состояния бота для
     # приёма значения выбранной пользователем команды бота
@@ -614,7 +619,7 @@ def get_hotels_list(call: CallbackQuery) -> None:
 
         # подключение к базе данных
         with db:
-            db.create_tables([User, History])  # создание или подключение к таблицам пользователей и историй поиска
+            # db.create_tables([User, History])  # создание или подключение к таблицам пользователей и историй поиска
             logger.info("Создание базы данных или подключение к ней.")
             # определение пользователя
             user = [
@@ -738,7 +743,7 @@ def get_exact_hotel(call: CallbackQuery) -> None:
                     break
         # создание или подключение к базе данных
         with db:
-            db.create_tables([User, History])  # создание или подключение к таблицам пользователей и историй поиска
+            # db.create_tables([User, History])  # создание или подключение к таблицам пользователей и историй поиска
             # определение пользователя
             user = [
                 {'name': call.from_user.username, 'telegram_id': call.from_user.id}

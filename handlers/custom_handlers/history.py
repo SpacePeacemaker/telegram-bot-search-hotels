@@ -23,44 +23,57 @@ def history(message: Message) -> None:
                compression="zip")  # создание лога или подключение к нему
 
     logger.info("Пользователь " + message.from_user.username + " ввёл команду: " + message.text)
-    temp_arr = []  # создание временного массива для сохранения историй поиска пользователя
+    log_arr = []  # создание временного массива для сохранения историй поиска пользователя
     # в памяти бота для логирования
 
     with db:  # открываем менеджер базы данных
+        db.create_tables([User, History])  # создание или подключение к таблицам пользователей и историй поиска
+        # определение пользователя
         try:
             users = User.select()  # выбираем всех имеющихся пользователей
-            for user in users:  # цикл поиска текущего пользователя в базе данных
-                if user.telegram_id == message.from_user.id:
-                    user_histories = History.select().where(History.user_id == user.id)
-                    buttons_list = []
-                    for user_history in user_histories:  # формируем клавиатуру с историей поиска текущего пользователя
-                        cb_data = 'history|' + str(user_history.id)
-                        text = str(user_history.date_time)[:19] + ' - ' \
-                            + user_history.city + ' - ' + user_history.command
-                        info_button = namedtuple('Button_Info', 'text cb_data')
-                        but_cor = info_button(text, cb_data)
-                        temp_arr.append(but_cor)
-                        buttons_list.append(types.InlineKeyboardButton(text=text, callback_data=cb_data))
-                    keyboard = types.InlineKeyboardMarkup(user_choice_keyboard.create_button_keyboard(buttons_list))
-                    bot.send_message(message.chat.id,
-                                     'Пожалуйста, уточните ваш поиск, детали которого вы хотели бы просмотреть:',
-                                     reply_markup=keyboard)
-                    logger.info("Пользователь " + message.from_user.username + " получил список своих поисков.")
-                    # установка бота в состояние для уточнения истории поиска
-                    bot.set_state(message.from_user.id, HistoryInfoState.exact_history, message.chat.id)
-                else:
-                    bot.send_message(message.chat.id, 'В базе данных нет записей о вашей истории поисков. '
-                                                      'Похоже, вы ещё ни разу не пользовались ботом. '
-                                                      'Самое время начать!')
-                    logger.warning("Пользователь " + message.from_user.username + " отсутствует в базе данных.")
+            if len(users) != 0:
+                for user in users:  # цикл поиска текущего пользователя в базе данных
+                    if user.telegram_id == message.from_user.id:
+                        user_histories = History.select().where(History.user_id == user.id)
+                        buttons_list = []
+                        for user_history in user_histories:  # формируем клавиатуру с историей поиска
+                            # текущего пользователя
+                            cb_data = 'history|' + str(user_history.id)
+                            text = str(user_history.date_time)[:19] + ' - ' \
+                                + user_history.city + ' - ' + user_history.command
+                            info_button = namedtuple('Button_Info', 'text cb_data')
+                            but_cor = info_button(text, cb_data)
+                            log_arr.append(but_cor)
+                            buttons_list.append(types.InlineKeyboardButton(text=text, callback_data=cb_data))
+                        keyboard = types.InlineKeyboardMarkup(user_choice_keyboard.create_button_keyboard(buttons_list))
+                        bot.send_message(message.chat.id,
+                                         'Пожалуйста, уточните ваш поиск, детали которого вы хотели бы просмотреть:',
+                                         reply_markup=keyboard)
+                        logger.info("Пользователь " + message.from_user.username + " получил список своих поисков.")
+                        # установка бота в состояние для уточнения истории поиска
+                        bot.set_state(message.from_user.id, HistoryInfoState.exact_history, message.chat.id)
+                    else:
+                        bot.send_message(message.chat.id, 'В базе данных нет записей о вашей истории поисков. '
+                                                          'Похоже, вы ещё ни разу не пользовались ботом. '
+                                                          'Самое время начать!')
+                        logger.warning("Пользователь " + message.from_user.username + " отсутствует в базе данных.")
+                        bot.delete_state(message.from_user.id, message.chat.id)  # удаление состояния бота
+                        # для новой команды
+            else:
+                bot.send_message(message.chat.id, 'В базе данных нет записей о вашей истории поисков. '
+                                                  'Похоже, вы ещё ни разу не пользовались ботом. '
+                                                  'Самое время начать!')
+                logger.warning("Пользователь " + message.from_user.username + " отсутствует в базе данных.")
+                bot.delete_state(message.from_user.id, message.chat.id)  # удаление состояния бота для новой команды
         except DatabaseError:  # ошибка отсутствия базы данных
             bot.send_message(message.chat.id, 'Базы данных пока что не существует. '
                                               'Самое время начать пользоваться ботом!')
             logger.warning("База данных отсутствует!")
 
-    with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
-        data_info["choice_history"] = temp_arr  # занесение информации об истории поиска пользователя в память бота
-        # для логирования
+    if len(log_arr) != 0:
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
+            data_info["choice_history"] = log_arr  # занесение информации об истории поиска пользователя в память бота
+            # для логирования
 
 
 @logger.catch()
@@ -114,13 +127,13 @@ def get_exact_history(call: CallbackQuery) -> None:
                 if row.total_price is not None:
                     text_message += '\nЦена за ' + str(row.nights) + ' ночей: ' + str(row.total_price) + '$'
                 if row.price_min is not None:
-                    text_message += '\nМинимальная цена в поиске: ' + str(row.price_min)
+                    text_message += '\nМинимальная цена в поиске: ' + str(row.price_min) + '$'
                 if row.price_max is not None:
-                    text_message += '\nМаксимальная цена в поиске: ' + str(row.price_max)
+                    text_message += '\nМаксимальная цена в поиске: ' + str(row.price_max) + '$'
                 if row.dest_min is not None:
-                    text_message += '\nМинимальное расстояние до центра в поиске: ' + str(row.dest_min)
+                    text_message += '\nМинимальное расстояние до центра в поиске: ' + str(row.dest_min) + ' км'
                 if row.dest_max is not None:
-                    text_message += '\nМаксимальное расстояние до центра в поиске: ' + str(row.dest_max)
+                    text_message += '\nМаксимальное расстояние до центра в поиске: ' + str(row.dest_max) + ' км'
 
                 bot.send_message(call.message.chat.id, text_message)
 
