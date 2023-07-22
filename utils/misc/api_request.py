@@ -9,11 +9,11 @@ headers = {
 }
 
 
-def api_request(method_endswith: str, params, method_type: str):
+def api_request(method_endswith: str, params: dict, method_type: str):
     """
     Функция взаимодействия с API.
     :param method_endswith: str
-    :param params:
+    :param params: dict
     :param method_type: str
     :return:
     """
@@ -31,11 +31,11 @@ def api_request(method_endswith: str, params, method_type: str):
         )
 
 
-def get_request(url: str, params) -> str:
+def get_request(url: str, params: dict) -> str:
     """
     GET-функция запроса к API.
-    :param url:
-    :param params:
+    :param url: str
+    :param params: dict
     :return: str
     """
     try:
@@ -51,11 +51,11 @@ def get_request(url: str, params) -> str:
         print("Ошибка!")
 
 
-def post_request(url: str, params) -> str:
+def post_request(url: str, params: dict) -> str:
     """
     POST-функция запроса к API.
     :param url: str
-    :param params:
+    :param params: dict
     :return: str
     """
     try:

@@ -71,7 +71,7 @@ def get_city(message: Message) -> None:
     """
     logger.info("Пользователь " + message.from_user.username + " ввёл следующее местоположение: " + message.text)
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data_info:
-        if message.text.isalpha():  # проверка на ввод буквенных значений
+        if not message.text.isdigit():  # проверка на ввод буквенных значений
             data_info["dict_answer"] = api_city_list.get_city_list(message.text)
             buttons_list = []  # инициализация списка кнопок клавиатуры
             for i_key, i_value in data_info["dict_answer"].items():
